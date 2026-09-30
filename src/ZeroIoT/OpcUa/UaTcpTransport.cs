@@ -1,22 +1,27 @@
 using System;
 using System.IO;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace ZeroIoT.OpcUa
 {
     /// <summary>
-    /// Pure C# non-blocking UA-TCP transport layer handling connection establishment and message framing.
+    /// Pure C# non-blocking UA-TCP transport layer handling connection establishment,
+    /// X.509 TLS/mTLS encryption, and message framing.
     /// </summary>
     public class UaTcpTransport : IDisposable
     {
+        private readonly OpcUaClientOptions _options;
         private TcpClient? _client;
-        private NetworkStream? _stream;
+        private Stream? _stream;
 
-        public string Host { get; }
-        public int Port { get; }
-        public string EndpointUrl { get; }
+        public string Host => _options.Host;
+        public int Port => _options.Port;
+        public string EndpointUrl => _options.EndpointUrl ?? $"opc.tcp://{Host}:{Port}";
         public bool IsConnected => _client != null && _client.Connected;
 
         public uint ServerProtocolVersion { get; private set; }
@@ -26,10 +31,18 @@ namespace ZeroIoT.OpcUa
         public uint ServerMaxChunkCount { get; private set; }
 
         public UaTcpTransport(string host, int port = 4840, string? endpointUrl = null)
+            : this(new OpcUaClientOptions
+            {
+                Host = host ?? throw new ArgumentNullException(nameof(host)),
+                Port = port,
+                EndpointUrl = endpointUrl
+            })
         {
-            Host = host ?? throw new ArgumentNullException(nameof(host));
-            Port = port;
-            EndpointUrl = endpointUrl ?? $"opc.tcp://{host}:{port}";
+        }
+
+        public UaTcpTransport(OpcUaClientOptions options)
+        {
+            _options = options ?? throw new ArgumentNullException(nameof(options));
         }
 
         public async Task<bool> ConnectAsync(CancellationToken cancellationToken = default)
@@ -39,7 +52,44 @@ namespace ZeroIoT.OpcUa
             _client = new TcpClient();
             _client.NoDelay = true;
             await _client.ConnectAsync(Host, Port).ConfigureAwait(false);
-            _stream = _client.GetStream();
+
+            Stream networkStream = _client.GetStream();
+
+            if (_options.UseTls)
+            {
+                var sslStream = new SslStream(
+                    networkStream,
+                    leaveInnerStreamOpen: false,
+                    userCertificateValidationCallback: _options.CertificateValidationCallback
+                );
+
+                string targetHost = _options.TargetHost ?? Host;
+                var clientCerts = _options.ClientCertificates ?? new X509CertificateCollection();
+
+                #if NET8_0_OR_GREATER
+                var sslOptions = new SslClientAuthenticationOptions
+                {
+                    TargetHost = targetHost,
+                    ClientCertificates = clientCerts,
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                    CertificateRevocationCheckMode = X509RevocationMode.NoCheck
+                };
+                await sslStream.AuthenticateAsClientAsync(sslOptions, cancellationToken).ConfigureAwait(false);
+                #else
+                await sslStream.AuthenticateAsClientAsync(
+                    targetHost,
+                    clientCerts,
+                    SslProtocols.Tls12,
+                    checkCertificateRevocation: false
+                ).ConfigureAwait(false);
+                #endif
+
+                _stream = sslStream;
+            }
+            else
+            {
+                _stream = networkStream;
+            }
 
             // 1. Send Hello Message (HEL)
             byte[] helloPacket = UaBinaryEncoder.EncodeHello(EndpointUrl);

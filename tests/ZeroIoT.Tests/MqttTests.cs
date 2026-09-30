@@ -146,5 +146,85 @@ namespace ZeroIoT.Tests
             Assert.Equal((byte)((byte)MqttPacketType.Disconnect << 4), disc[0]);
             Assert.Equal(0x00, disc[1]);
         }
+
+        [Fact]
+        public void QoS2_Packets_EncodeAndDecode_RoundTrip()
+        {
+            ushort packetId = 54321;
+
+            // PUBREC
+            byte[] recPacket = MqttPacketEncoder.EncodePubRec(packetId);
+            Assert.Equal(4, recPacket.Length);
+            Assert.Equal((byte)((byte)MqttPacketType.PubRec << 4), recPacket[0]);
+            Assert.Equal(0x02, recPacket[1]);
+            Assert.True(MqttPacketDecoder.TryDecodeFixedHeader(recPacket, out var recHeader, out int recHeaderLen));
+            Assert.Equal(MqttPacketType.PubRec, recHeader.PacketType);
+            Assert.True(MqttPacketDecoder.TryDecodePubRec(recPacket.AsSpan(recHeaderLen), out ushort recId));
+            Assert.Equal(packetId, recId);
+
+            // PUBREL (Fixed header bit 1 must be 1 => 0x62)
+            byte[] relPacket = MqttPacketEncoder.EncodePubRel(packetId);
+            Assert.Equal(4, relPacket.Length);
+            Assert.Equal((byte)(((byte)MqttPacketType.PubRel << 4) | 0x02), relPacket[0]);
+            Assert.Equal(0x02, relPacket[1]);
+            Assert.True(MqttPacketDecoder.TryDecodeFixedHeader(relPacket, out var relHeader, out int relHeaderLen));
+            Assert.Equal(MqttPacketType.PubRel, relHeader.PacketType);
+            Assert.True(MqttPacketDecoder.TryDecodePubRel(relPacket.AsSpan(relHeaderLen), out ushort relId));
+            Assert.Equal(packetId, relId);
+
+            // PUBCOMP
+            byte[] compPacket = MqttPacketEncoder.EncodePubComp(packetId);
+            Assert.Equal(4, compPacket.Length);
+            Assert.Equal((byte)((byte)MqttPacketType.PubComp << 4), compPacket[0]);
+            Assert.Equal(0x02, compPacket[1]);
+            Assert.True(MqttPacketDecoder.TryDecodeFixedHeader(compPacket, out var compHeader, out int compHeaderLen));
+            Assert.Equal(MqttPacketType.PubComp, compHeader.PacketType);
+            Assert.True(MqttPacketDecoder.TryDecodePubComp(compPacket.AsSpan(compHeaderLen), out ushort compId));
+            Assert.Equal(packetId, compId);
+        }
+
+        [Fact]
+        public void Qos2FlightTable_Lifecycle_ManagesFlightsCorrectly()
+        {
+            var table = new Qos2FlightTable();
+            ushort packetId = 99;
+
+            // Outbound
+            var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+            table.RegisterOutbound(packetId, tcs);
+            Assert.True(table.TryGetOutbound(packetId, out var foundTcs));
+            Assert.Same(tcs, foundTcs);
+
+            bool completed = table.CompleteOutbound(packetId);
+            Assert.True(completed);
+            Assert.True(tcs.Task.IsCompleted);
+
+            // Inbound
+            byte[] payload = new byte[] { 10, 20, 30 };
+            table.StoreInbound(packetId, "test/topic", payload, retain: true);
+            Assert.True(table.TryReleaseInbound(packetId, out var msg));
+            Assert.Equal("test/topic", msg.Topic);
+            Assert.Equal(payload, msg.Payload);
+            Assert.True(msg.Retain);
+        }
+
+        [Fact]
+        public void MqttClientOptions_DefaultAndCustomValues()
+        {
+            var options = new MqttClientOptions
+            {
+                Host = "mqtt.example.com",
+                Port = 8883,
+                UseTls = true,
+                TargetHost = "mqtt.example.com",
+                KeepAliveSeconds = 45
+            };
+
+            Assert.Equal("mqtt.example.com", options.Host);
+            Assert.Equal(8883, options.Port);
+            Assert.True(options.UseTls);
+            Assert.Equal("mqtt.example.com", options.TargetHost);
+            Assert.Equal(45, options.KeepAliveSeconds);
+        }
     }
 }

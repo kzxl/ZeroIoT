@@ -23,6 +23,11 @@ namespace ZeroIoT.OpcUa
             _transport = new UaTcpTransport(host, port, endpointUrl);
         }
 
+        public OpcUaClient(OpcUaClientOptions options)
+        {
+            _transport = new UaTcpTransport(options);
+        }
+
         public async Task<bool> ConnectAsync(CancellationToken cancellationToken = default)
         {
             return await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);

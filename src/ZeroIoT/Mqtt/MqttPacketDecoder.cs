@@ -145,6 +145,24 @@ namespace ZeroIoT.Mqtt
         }
 
         /// <summary>
+        /// Decodes a PUBREC packet (extracts 2-byte packet ID).
+        /// </summary>
+        public static bool TryDecodePubRec(ReadOnlySpan<byte> remainingBuffer, out ushort packetId) =>
+            TryDecodePubAck(remainingBuffer, out packetId);
+
+        /// <summary>
+        /// Decodes a PUBREL packet (extracts 2-byte packet ID).
+        /// </summary>
+        public static bool TryDecodePubRel(ReadOnlySpan<byte> remainingBuffer, out ushort packetId) =>
+            TryDecodePubAck(remainingBuffer, out packetId);
+
+        /// <summary>
+        /// Decodes a PUBCOMP packet (extracts 2-byte packet ID).
+        /// </summary>
+        public static bool TryDecodePubComp(ReadOnlySpan<byte> remainingBuffer, out ushort packetId) =>
+            TryDecodePubAck(remainingBuffer, out packetId);
+
+        /// <summary>
         /// Decodes a SUBACK packet.
         /// </summary>
         public static bool TryDecodeSubAck(ReadOnlySpan<byte> remainingBuffer, out ushort packetId, out byte[] returnCodes)

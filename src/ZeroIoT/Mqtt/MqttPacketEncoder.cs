@@ -200,6 +200,48 @@ namespace ZeroIoT.Mqtt
         }
 
         /// <summary>
+        /// Encodes a PUBREC packet (response to QoS 2 publish, step 2 of 4).
+        /// </summary>
+        public static byte[] EncodePubRec(ushort packetId)
+        {
+            return new byte[]
+            {
+                (byte)((byte)MqttPacketType.PubRec << 4),
+                0x02,
+                (byte)(packetId >> 8),
+                (byte)(packetId & 0xFF)
+            };
+        }
+
+        /// <summary>
+        /// Encodes a PUBREL packet (response to PUBREC, step 3 of 4). Fixed header bit 1 must be 1.
+        /// </summary>
+        public static byte[] EncodePubRel(ushort packetId)
+        {
+            return new byte[]
+            {
+                (byte)(((byte)MqttPacketType.PubRel << 4) | 0x02),
+                0x02,
+                (byte)(packetId >> 8),
+                (byte)(packetId & 0xFF)
+            };
+        }
+
+        /// <summary>
+        /// Encodes a PUBCOMP packet (response to PUBREL, step 4 of 4).
+        /// </summary>
+        public static byte[] EncodePubComp(ushort packetId)
+        {
+            return new byte[]
+            {
+                (byte)((byte)MqttPacketType.PubComp << 4),
+                0x02,
+                (byte)(packetId >> 8),
+                (byte)(packetId & 0xFF)
+            };
+        }
+
+        /// <summary>
         /// Encodes a SUBSCRIBE packet.
         /// </summary>
         public static byte[] EncodeSubscribe(ushort packetId, params (string topic, MqttQoS qos)[] subscriptions)
